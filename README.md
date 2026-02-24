@@ -32,10 +32,85 @@ User Query (Streamlit)
 | Agent | Role |
 |---|---|
 | **Router** | Classifies intent (`COMPARISON`, `PL_REPORT`, `DETAILS`, `TENANT`, `GENERAL`, `CLARIFY`) and extracts property names, tenant, and year via a structured JSON prompt. Only accepts exact matches — no guessing. |
-| **DataRetriever** | Queries `data_manager.py` and assembles the exact data slice requested. Surfacing errors if entities or years are not in the dataset. |
-| **Analyst** | Formats retrieved data into professional markdown. Uses **only** figures present in `raw_data` — never estimates or invents numbers. |
-| **Clarifier** | Asks a targeted follow-up when the query is ambiguous, incomplete, or the requested data doesn't exist. |
-| **ErrorHandler** | Provides specific, actionable responses for all failure modes (missing property, unavailable year, unsupported intent, etc.). |
+| **DataRetriever** | Queries `data_manager.py` and assembles the exact data slice requested. Returns errors if entities or years are not in the dataset. |
+| **Analyst** | Formats retrieved data into professional markdown. Opens with a direct one-sentence answer. Uses **only** figures from `raw_data` — never estimates or invents numbers. |
+| **Clarifier** | Asks a targeted follow-up when the query is ambiguous, incomplete, or the requested data doesn't exist. Prevents silent substitution. |
+| **ErrorHandler** | Provides specific, actionable responses for all failure modes (missing property, unavailable year, unsupported intent, system errors). |
+
+---
+
+## 🔀 LangGraph Workflow
+
+### State Machine
+
+```
+                    ┌──────────────────────────────┐
+                    │       AgentState (TypedDict)  │
+                    │  - messages: List[BaseMessage]│
+                    │  - intent: str                │
+                    │  - properties: List[str]      │
+                    │  - tenant: Optional[str]      │
+                    │  - year: Optional[str]        │
+                    │  - raw_data: Dict             │
+                    │  - final_output: str          │
+                    │  - error: Optional[str]       │
+                    │  - clarification_needed: str  │
+                    └──────────────────────────────┘
+
+  User Input
+      │
+      ▼
+ ┌─────────┐   route_decision()
+ │  Router │ ─────────────────────────────────────────────────────┐
+ └─────────┘                                                      │
+      │                                                           │
+  ┌───┴──────┬───────────────┬──────────────────┐                │
+  │ retrieve │    general    │     clarify       │    end (error) │
+  ▼          ▼               ▼                  │                ▼
+┌──────────────┐  ┌──────────┐  ┌───────────┐  │        ┌─────────────┐
+│DataRetriever │  │ Analyst  │  │ Clarifier │  │        │ErrorHandler │
+└──────┬───────┘  └────┬─────┘  └─────┬─────┘  │        └──────┬──────┘
+       │               │              │         │               │
+  retriever_decision() │              │         │               │
+  ┌────┴────┐          │              │         │               │
+  │  ok     │ error    │              │         │               │
+  ▼         ▼          │              │         │               │
+┌───────┐ ┌──────────┐ │              │         │               │
+│Analyst│ │ErrorHandl│ │              │         │               │
+└───┬───┘ └────┬─────┘ │              │         │               │
+    │          │       │              │         │               │
+    └──────────┴───────┴──────────────┴─────────┴───────────────┘
+                                      │
+                                     END
+```
+
+### Intent Routing Table
+
+| User says | Intent | Route | Data fetched |
+|---|---|---|---|
+| "Compare Building 17 and Building 120" | `COMPARISON` | retrieve → analyst | `compare_properties()` |
+| "P&L for Building 17 in 2024" | `PL_REPORT` | retrieve → analyst | `get_property_pl()` |
+| "Total P&L" | `PL_REPORT` | retrieve → analyst | `get_total_pl()` |
+| "Details on Building 17" | `DETAILS` | retrieve → analyst | `get_property_details()` |
+| "Tenant 12 revenue" | `TENANT` | retrieve → analyst | `get_tenant_details()` |
+| "What is cap rate?" | `GENERAL` | general → analyst | None (LLM knowledge) |
+| "Compare" (no properties) | `CLARIFY` | clarify → END | None |
+| Property not in dataset | error | end → ErrorHandler | None |
+| Year not in dataset | error | retrieve → end → ErrorHandler | None |
+
+### State Flow
+
+LangGraph passes a single **immutable state dict** between nodes. Each node returns only the keys it modifies — LangGraph merges them back into the accumulated state. The `messages` key uses `operator.add` as its reducer, allowing append-only message history.
+
+```python
+# Conditional edge: router → next node
+graph.add_conditional_edges(
+    "router",
+    route_decision,          # function inspects state["intent"] and state["error"]
+    {"retrieve": "data_retriever", "general": "analyst",
+     "clarify": "clarifier", "end": "error_handler"}
+)
+```
 
 ---
 

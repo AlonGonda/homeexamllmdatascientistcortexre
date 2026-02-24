@@ -2,6 +2,38 @@
 agents_logic.py – LangGraph Multi-Agent Orchestration
 ======================================================
 
+Technology Choices & Rationale
+--------------------------------
+LangGraph (StateGraph)
+    Chosen over a single-chain approach because real asset management
+    queries have fundamentally different execution paths (data retrieval
+    vs. general knowledge vs. clarification).  The explicit state machine
+    makes routing transparent, testable, and easy to extend.  Each node
+    has a single responsibility, reducing the risk of prompt-bleeding
+    between concerns (e.g. the Analyst never decides what data to fetch).
+
+Anthropic Claude (langchain-anthropic)
+    Selected for its strong instruction-following on structured JSON
+    prompts and its reliable refusal to fabricate data when explicitly
+    instructed.  Using ``temperature=0`` ensures deterministic routing
+    and reproducible P&L figures.  The modular LangChain integration
+    means the LLM provider can be swapped (e.g. to OpenAI or a local
+    model) by changing a single import.
+
+Pandas + Parquet (data_manager.py)
+    The dataset is a structured ledger — precise aggregation with group-
+    by / filter / sum is more reliable than vector similarity search.
+    Parquet provides columnar compression and fast predicate pushdown.
+    ``@lru_cache`` ensures the file is read only once per process.
+
+JSON-only Router Prompt
+    Structured output from the LLM avoids fragile text parsing.  A
+    regex fallback handles cases where the model wraps JSON in fences.
+
+No-Silent-Substitution Policy
+    All fuzzy matching and inferences are surfaced to the user rather
+    than applied silently.  This ensures data integrity and builds trust.
+
 Agent Graph
 -----------
 
@@ -31,7 +63,7 @@ CLARIFY     – ambiguous / incomplete query → ask a follow-up question
 
 Error Handling
 --------------
-1. Property not found       → router rejects via fuzzy validation, ErrorHandler replies
+1. Property not found       → router rejects via validation, ErrorHandler replies
 2. Financial data missing   → DataRetriever detects empty result, ErrorHandler replies
 3. Ambiguous / incomplete   → Router emits CLARIFY → Clarifier node asks targeted question
 4. Unsupported/gibberish    → Router falls back to GENERAL or CLARIFY as appropriate
