@@ -198,18 +198,26 @@ Current real-world year: {current_year}
 Most recent year with data: {most_recent_year}
 
 Classify the user's intent into EXACTLY ONE of:
-  COMPARISON  – comparing two or more properties
-  PL_REPORT   – profit & loss report (one property or entire portfolio)
-  DETAILS     – detailed info about a single property
-  TENANT      – question about a specific tenant
-  GENERAL     – general real estate knowledge (no dataset lookup needed)
-  CLARIFY     – query is too vague, ambiguous, or missing required information
+  COMPARISON    – comparing two or more properties
+  PL_REPORT     – profit & loss report (one property or entire portfolio)
+  DETAILS       – detailed info about a single property
+  TENANT        – question about a specific tenant
+  GENERAL       – general real estate / asset management knowledge question
+                  (e.g. cap rates, NOI, lease structures, valuations)
+  CLARIFY       – query is too vague, ambiguous, or missing required information
+  OUT_OF_SCOPE  – query is completely unrelated to real estate or asset management
+                  (e.g. sports, celebrities, weather, cooking, politics)
 
 Use CLARIFY when:
 - The user mentions a data-specific intent (COMPARISON/PL_REPORT/DETAILS/TENANT)
   but the necessary parameters are completely missing or unresolvable AND you
   cannot fall back gracefully (e.g. "compare" with no properties at all).
-- The user's message is incoherent or off-topic in a way that requires clarification.
+- The user's message is incoherent or completely unclear.
+
+Use OUT_OF_SCOPE when:
+- The query has absolutely nothing to do with real estate, property management,
+  asset management, financial analysis, or related professional topics.
+- Examples: "who is Leo Messi", "what is the weather", "write me a poem".
 
 IMPORTANT – Year extraction rules:
 - If the user says "this year", "current year", or similar, set year = {current_year}.
@@ -239,7 +247,8 @@ Respond with ONLY a JSON object, no markdown fences. Example:
             parsed = {}
 
         intent = parsed.get("intent", "GENERAL").upper()
-        if intent not in {"COMPARISON", "PL_REPORT", "DETAILS", "TENANT", "GENERAL", "CLARIFY"}:
+        VALID_INTENTS = {"COMPARISON", "PL_REPORT", "DETAILS", "TENANT", "GENERAL", "CLARIFY", "OUT_OF_SCOPE"}
+        if intent not in VALID_INTENTS:
             intent = "GENERAL"
 
         # ── Validate extracted property names against the real dataset ──────────
@@ -262,7 +271,7 @@ Respond with ONLY a JSON object, no markdown fences. Example:
 
         # If user clearly named properties but NONE resolved exactly → error
         error = None
-        if raw_props and not resolved and intent not in {"GENERAL", "CLARIFY"}:
+        if raw_props and not resolved and intent not in {"GENERAL", "CLARIFY", "OUT_OF_SCOPE"}:
             # Build a helpful message listing close matches if any exist
             suggestions = []
             for name in unresolved:
@@ -295,6 +304,8 @@ Respond with ONLY a JSON object, no markdown fences. Example:
         intent = state.get("intent", "GENERAL")
         if intent == "CLARIFY":
             return "clarify"
+        if intent == "OUT_OF_SCOPE":
+            return "end"    # handled by error_handler with a scope message
         if intent == "GENERAL":
             return "general"
         return "retrieve"
@@ -570,15 +581,33 @@ Respond with ONLY a JSON object, no markdown fences. Example:
         """
         Produce a helpful, actionable response for all error scenarios:
 
-        1. Property address not in dataset
-        2. Financial data unavailable for the requested period
-        3. Ambiguous or unsupported instructions (caught before here by clarifier)
-        4. Unexpected system errors
+        1. OUT_OF_SCOPE – query unrelated to real estate (e.g. sports, celebrities)
+        2. Property address not in dataset
+        3. Financial data unavailable for the requested period
+        4. Ambiguous or unsupported instructions (caught before here by clarifier)
+        5. Unexpected system errors
         """
+        intent = state.get("intent", "")
         error = state.get("error") or ""
         user_msg = state["messages"][-1].content if state.get("messages") else ""
         available = dm.list_properties()
         years = dm.list_years()
+
+        # ── Out-of-scope: politely redirect ────────────────────────────────────
+        if intent == "OUT_OF_SCOPE":
+            message = (
+                "🏢 **I'm a real estate asset management assistant.**\n\n"
+                f"I can't help with *\"{user_msg}\"* — that's outside my scope.\n\n"
+                "**Here's what I can do for you:**\n"
+                "- 📊 P&L reports — *\"What's the total P&L for 2024?\"*\n"
+                "- 🏠 Property comparison — *\"Compare Building 17 and Building 120\"*\n"
+                "- 🔍 Property details — *\"Show details for Building 140\"*\n"
+                "- 👤 Tenant info — *\"What revenue does Tenant 12 generate?\"*\n"
+                "- 💬 Real estate knowledge — *\"What is a good cap rate?\"*\n\n"
+                f"**Available properties:** {', '.join(available)}\n"
+                f"**Available years:** {', '.join(years)}"
+            )
+            return {"final_output": message}
 
         if error:
             message = (
@@ -587,7 +616,7 @@ Respond with ONLY a JSON object, no markdown fences. Example:
                 "---\n"
                 "**What you can ask me:**\n"
                 "- 📊 P&L report — *\"What's the total P&L for 2024?\"*\n"
-                "- 🏠 Property comparison — *\"Compare Building 5 and Building 12\"*\n"
+                "- 🏠 Property comparison — *\"Compare Building 17 and Building 120\"*\n"
                 "- 🔍 Property details — *\"Show details for Building 17\"*\n"
                 "- 👤 Tenant info — *\"What revenue does Tenant 12 generate?\"*\n"
                 "- 💬 General questions — anything about real estate investing\n\n"
@@ -601,7 +630,7 @@ Respond with ONLY a JSON object, no markdown fences. Example:
                 "Try one of these:\n"
                 "- *\"What is the P&L for Building 17 in 2024?\"*\n"
                 "- *\"Compare all properties\"*\n"
-                "- *\"Show details for Building 5\"*\n"
+                "- *\"Show details for Building 140\"*\n"
                 f"\n**Available properties:** {', '.join(available)}"
             )
 
