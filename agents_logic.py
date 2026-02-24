@@ -218,16 +218,27 @@ Use OUT_OF_SCOPE when:
 - The query has absolutely nothing to do with real estate, property management,
   asset management, financial analysis, or related professional topics.
 - Examples: "who is Leo Messi", "what is the weather", "write me a poem".
+- Do NOT use OUT_OF_SCOPE for self-introduction queries like "who are you?",
+  "what can you do?", or "help" — these should be classified as GENERAL.
 
 IMPORTANT – Year extraction rules:
-- If the user says "this year", "current year", or similar, set year = {current_year}.
-- If no specific year is mentioned, set year = null (means all available years).
+- Set year ONLY when the user EXPLICITLY provides a year number (e.g. "2024", "2025")
+  OR uses the exact phrase "this year" or "current year".
+- "For all my properties", "total", "overall" and similar do NOT imply any year.
+- If no explicit year is stated, set year = null (returns all-time figures).
+- NEVER infer the year from context or from the current date shown above.
 - Always set year as a string (e.g. "2025"), never as an integer.
 
 IMPORTANT – Property extraction rules:
 - Only extract properties that EXACTLY match names in the available list (case-insensitive).
 - If the user says "all properties", "all my properties", or similar, set properties = {available_properties}.
 - Do NOT guess or infer a property name that was not explicitly stated.
+
+IMPORTANT – When to use CLARIFY vs PL_REPORT:
+- "What's the total P&L?" → PL_REPORT, properties=[], year=null  (portfolio all-time)
+- "Show me the P&L" → PL_REPORT, properties=[], year=null  (portfolio all-time)
+- "P&L in 2024" → PL_REPORT, properties=[], year="2024"
+- Only use CLARIFY for data intents when the query is genuinely unresolvable.
 
 Also extract:
   tenant      – matching tenant name from the list, or null
@@ -528,10 +539,18 @@ Respond with ONLY a JSON object, no markdown fences. Example:
 
         # ── GENERAL: LLM answers from its own knowledge ─────────────────────────
         if intent == "GENERAL":
+            available = dm.list_properties()
+            years = dm.list_years()
             system = SystemMessage(content=(
-                "You are a senior real estate asset management expert. "
-                "Answer the user's question with professional insight. "
-                "Use markdown formatting for clarity. Be concise and direct."
+                "You are Cortex RE, a senior real estate asset management AI assistant.\n"
+                f"You manage the PropCo portfolio: {', '.join(available)} "
+                f"across years {', '.join(years)}.\n\n"
+                "Answer the user's question professionally and concisely using markdown. "
+                "If the user asks who you are or what you can do, introduce yourself and "
+                "explain your capabilities (P&L reports, property comparisons, details, "
+                "tenant analysis, and general real estate knowledge). "
+                "If the question is about real estate concepts, answer from expert knowledge. "
+                "Stay strictly within real estate and asset management topics."
             ))
             messages = [system, HumanMessage(content=user_msg)]
 

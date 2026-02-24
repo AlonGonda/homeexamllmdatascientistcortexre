@@ -173,15 +173,19 @@ Paste your `sk-ant-...` key into the sidebar. Select a Claude model (Haiku is fa
 
 | Type | Example |
 |---|---|
-| Portfolio P&L | *"What is the total P&L for all properties in 2024?"* |
+| All-time portfolio P&L | *"What is the total P&L?"* |
+| Portfolio P&L by year | *"What is the total P&L for all properties in 2024?"* |
 | Property P&L | *"Show me the profit and loss for Building 17"* |
 | Comparison | *"Compare Building 17 and Building 120 in 2025"* |
 | Compare all | *"Compare all my properties"* |
 | Property details | *"Give me full details on Building 17"* |
 | Tenant info | *"How much revenue does Tenant 12 generate?"* |
-| General | *"What is a good cap rate for commercial real estate?"* |
-| Missing property | *"P&L for 999 Fake Street"* → error listing real properties |
-| Missing year | *"P&L for 2023"* → error + clarification |
+| General knowledge | *"What is a good cap rate for commercial real estate?"* |
+| Self-introduction | *"Who are you?"* → assistant introduces itself |
+| Missing property | *"P&L for 999 Fake Street"* → error + list of real properties |
+| Missing year | *"P&L for 2023"* → error listing available years |
+| Out-of-scope | *"Who is Leo Messi?"* → professional scope redirect |
+| Vague comparison | *"Compare"* → clarification asking which properties |
 
 ---
 
@@ -216,8 +220,13 @@ A JSON-only LLM prompt for the Router ensures reliable structured extraction wit
 
 | Challenge | Solution |
 |---|---|
-| LLM invents plausible-sounding property names | Router validates against real dataset; invented names rejected with suggestions |
-| User asks "this year" (2026) but data only goes to 2025 | DataRetriever returns a clear error with available years |
-| Ambiguous comparisons ("compare my properties") | CLARIFY intent routes to Clarifier node which asks which properties |
+| LLM invents plausible-sounding property names | Router validates all names against real dataset; invented names rejected with "did you mean?" suggestions |
+| User asks "this year" (2026) but data only goes to 2025 | DataRetriever returns a clear error listing available years |
+| LLM leaks current date into year extraction (no year stated) | Router prompt now explicitly says NEVER infer year from context — only extract from explicit user text |
+| Ambiguous comparisons ("compare my properties") | CLARIFY intent → Clarifier node asks which properties; "compare all properties" correctly extracts all 5 |
+| "What's the total P&L?" routed to CLARIFY | Router prompt now includes concrete examples showing portfolio-level PL_REPORT with no property/year |
+| Off-topic queries (sports, celebrities) answered as general knowledge | Added OUT_OF_SCOPE intent with professional redirect message |
+| Self-introduction ("who are you?") mis-classified as out-of-scope | Router prompt explicitly exempts self-introduction queries from OUT_OF_SCOPE |
 | `$` signs in markdown render as LaTeX in Streamlit | Post-process responses to escape `$` before `st.markdown()` |
 | LLM wraps JSON in markdown fences | Regex fallback extracts the JSON object regardless |
+| Analyst fabricates numbers when no data retrieved | Anti-hallucination guard: analyst refuses to run if `raw_data` is empty for non-GENERAL intents |
