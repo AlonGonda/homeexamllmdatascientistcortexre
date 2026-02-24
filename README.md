@@ -151,21 +151,27 @@ cortex-re/
 
 ## 🚀 Setup
 
-### 1 · Install dependencies
+### Option A · Conda (recommended)
+
+```bash
+# 1. Create and activate environment
+conda env create -f environment.yml
+conda activate cortex-re
+
+# 2. Run the app
+python -m streamlit run app.py
+```
+
+### Option B · pip
 
 ```bash
 pip install -r requirements.txt
-```
-
-### 2 · Run the app
-
-```bash
 python -m streamlit run app.py
 ```
 
 ### 3 · Enter your Anthropic API key
 
-Paste your `sk-ant-...` key into the sidebar. Select a Claude model (Haiku is fastest). The agents will initialise and be ready immediately.
+Paste your `sk-ant-...` key into the sidebar. Select a Claude model (Haiku is fastest and most accessible). The agents will initialise and be ready immediately.
 
 ---
 
