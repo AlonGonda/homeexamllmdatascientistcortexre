@@ -98,6 +98,17 @@ def search_property(query: str) -> Optional[str]:
     return None
 
 
+def _to_native(data):
+    """Recursively convert numpy types to native Python types for serialization."""
+    if isinstance(data, dict):
+        return {k: _to_native(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_to_native(i) for i in data]
+    if hasattr(data, "item"):  # numpy scalars
+        return data.item()
+    return data
+
+
 # ─── P&L helpers ───────────────────────────────────────────────────────────────
 
 def _pl_summary(df: pd.DataFrame) -> Dict:
@@ -131,13 +142,13 @@ def _pl_summary(df: pd.DataFrame) -> Dict:
         .to_dict(orient="records")
     )
 
-    return {
+    return _to_native({
         "total_revenue": round(revenue, 2),
         "total_expenses": round(expenses, 2),
         "net_profit": round(net, 2),
         "by_category": by_category,
         "by_quarter": by_quarter,
-    }
+    })
 
 
 # ─── Public API ────────────────────────────────────────────────────────────────
@@ -182,8 +193,18 @@ def get_total_pl(year: Optional[str] = None) -> Dict:
         .to_dict(orient="records")
     )
 
-    result.update({"scope": "portfolio", "year": year or "all", "by_property": by_property})
-    return result
+    ranked = [
+        {"property": r["property_name"], "net_profit": r["net_profit"], "rank": i + 1}
+        for i, r in enumerate(by_property)
+    ]
+
+    result.update({
+        "scope": "portfolio",
+        "year": year or "all",
+        "by_property": by_property,
+        "ranked_properties_best_to_worst": ranked,
+    })
+    return _to_native(result)
 
 
 def compare_properties(property_names: List[str], year: Optional[str] = None) -> Dict:
@@ -222,7 +243,7 @@ def get_property_details(property_name: str) -> Dict:
         .to_dict(orient="records")
     )
 
-    return {
+    return _to_native({
         "property": property_name,
         "entity": sub["entity_name"].iloc[0],
         "tenants": tenants,
@@ -231,7 +252,7 @@ def get_property_details(property_name: str) -> Dict:
         "ledger_groups": ledger_groups,
         "pl_all_time": pl_all,
         "pl_latest_year": pl_latest,
-    }
+    })
 
 
 def get_tenant_details(tenant_name: str, year: Optional[str] = None) -> Dict:
@@ -257,7 +278,7 @@ def get_tenant_details(tenant_name: str, year: Optional[str] = None) -> Dict:
         .to_dict(orient="records")
     )
 
-    return {
+    return _to_native({
         "tenant": tenant_name,
         "year": year or "all",
         "properties": sub["property_name"].dropna().unique().tolist(),
@@ -265,7 +286,7 @@ def get_tenant_details(tenant_name: str, year: Optional[str] = None) -> Dict:
         "total_expenses": round(sub[sub["ledger_type"] == "expenses"]["profit"].sum(), 2),
         "net": round(sub["profit"].sum(), 2),
         "by_property": by_property,
-    }
+    })
 
 
 def get_portfolio_overview() -> Dict:
@@ -283,7 +304,7 @@ def get_portfolio_overview() -> Dict:
         .to_dict(orient="records")
     )
 
-    return {
+    return _to_native({
         "entity": "PropCo",
         "property_count": len(props),
         "tenant_count": len(list_tenants()),
@@ -298,4 +319,4 @@ def get_portfolio_overview() -> Dict:
         "all_time_net": round(df["profit"].sum(), 2),
         "by_year": by_year,
         "properties": props,
-    }
+    })

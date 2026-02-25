@@ -145,6 +145,9 @@ if "graph" not in st.session_state:
     st.session_state.graph = None
 if "api_key_set" not in st.session_state:
     st.session_state.api_key_set = False
+if "thread_id" not in st.session_state:
+    import uuid
+    st.session_state.thread_id = str(uuid.uuid4())
 
 
 def fmt_currency(value: float) -> str:
@@ -230,6 +233,8 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Clear Chat"):
         st.session_state.messages = []
+        import uuid
+        st.session_state.thread_id = str(uuid.uuid4())
         st.rerun()
 
 # ─── KPI Cards ─────────────────────────────────────────────────────────────────
@@ -302,10 +307,12 @@ for msg in st.session_state.messages:
 
 # ─── Input & Response ──────────────────────────────────────────────────────────
 
-user_query = query_from_button or st.chat_input(
+chat_query = st.chat_input(
     "Ask anything – e.g. 'What is the P&L for Building 17 in 2024?'",
     disabled=not st.session_state.api_key_set,
 )
+
+user_query = query_from_button or chat_query
 
 if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
@@ -319,7 +326,8 @@ if user_query:
             with st.spinner("🤖 Agents collaborating…"):
                 try:
                     inputs = {"messages": [HumanMessage(content=user_query)]}
-                    result = st.session_state.graph.app.invoke(inputs)
+                    config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                    result = st.session_state.graph.app.invoke(inputs, config=config)
                     response = result.get("final_output", "No response generated.")
                 except Exception as exc:
                     response = (
